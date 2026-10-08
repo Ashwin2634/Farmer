@@ -811,3 +811,17 @@ body {
   color: var(--color-text-sub);
   font-weight: 700;
 }
+
+.result-header-card.unknown {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-left: 4px solid #64748b;
+}
+
+.result-header-card.unknown .status-icon {
+  background: #64748b;
+  color: white;
+}
+
+.result-header-card.unknown .title {
+  color: #334155;
+}

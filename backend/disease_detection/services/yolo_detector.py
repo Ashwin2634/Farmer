@@ -23,9 +23,12 @@ class EfficientNetDetector:
         model_path: str = str(BASE_DIR / "models" / "trained" / "V2.1_EfficientNetV2-M_best.pth"),
         class_names_path: str = str(BASE_DIR / "models" / "trained" / "class_names.txt"),
         device: str = None,
+        confidence_threshold: float = 0.51,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.kb = KnowledgeBase()
+        # Max softmax probability below this → treat as OOD / "Unknown"
+        self.confidence_threshold = confidence_threshold
 
         if not os.path.exists(class_names_path):
             raise FileNotFoundError(f"Class names file not found: {class_names_path}")
@@ -137,6 +140,27 @@ class EfficientNetDetector:
         inference_time = round((time.perf_counter() - start) * 1000, 2)
 
         class_id = int(probs.argmax())
+        confidence = float(probs[class_id])
+
+        # ---- Confidence Thresholding (OOD / open-set) ----
+        # Softmax always sums to 1, so the model is forced to pick a class.
+        # If the highest probability is below the threshold we reject the
+        # prediction and return "Unknown / Not a trained disease".
+        if confidence < self.confidence_threshold:
+            return {
+                "model": "Ashwin's_AI_Model",
+                "image": {"width": width, "height": height},
+                "class_id": -1,
+                "class_name": "Unknown",
+                "crop": "",
+                "disease": "Unknown / Take a clear photo of the leaf and try again",
+                "confidence": round(confidence, 4),
+                "is_healthy": False,
+                "is_unknown": True,
+                "inference_time_ms": inference_time,
+                "treatment": None,
+            }
+
         info = self._describe_class(class_id)
 
         return {
@@ -146,8 +170,9 @@ class EfficientNetDetector:
             "class_name": info["class_name"],
             "crop": info["crop"],
             "disease": info["disease"],
-            "confidence": round(float(probs[class_id]), 4),
+            "confidence": round(confidence, 4),
             "is_healthy": info["is_healthy"],
+            "is_unknown": False,
             "inference_time_ms": inference_time,
             "treatment": info["treatment"],
         }

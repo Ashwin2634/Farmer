@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -63,6 +64,7 @@ async def _save_upload_to_temp(file: UploadFile, max_bytes: int) -> str:
 def _build_response(prediction: dict, filename: str, media_type: str) -> dict:
     treatment = prediction.get("treatment")
     is_healthy = prediction.get("is_healthy", False)
+    is_unknown = prediction.get("is_unknown", False)
 
     response = {
         "success": True,
@@ -81,11 +83,26 @@ def _build_response(prediction: dict, filename: str, media_type: str) -> dict:
         response["processing_time_ms"] = prediction.get("processing_time_ms")
         response["analysis"] = prediction.get("analysis")
 
+    # ---- OOD / Unknown (confidence below threshold) ----
+    if is_unknown:
+        response.update({
+            "status": "unknown",
+            "diagnosis": "Unknown / Upload a clear photo & try again",
+            "message": (
+                "The image does not match any trained disease class with sufficient confidence. "
+                "It may be a different crop, a disease not in the training set, a healthy plant, "
+                "or an unrelated object."
+            ),
+            "treatment": None,
+        })
+        return response
+
     if is_healthy:
         response.update({
             "status": "healthy",
             "diagnosis": "Healthy",
             "message": "No disease symptoms detected.",
+            "crop": prediction.get("crop"),
             "treatment": None,
         })
 

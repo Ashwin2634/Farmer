@@ -2,10 +2,10 @@
    AlexxaFarms — Frontend Logic
    Handles Tabs, Drag & Drop, Validation, and FastAPI Endpoints Integration
 ───────────────────────────────────────────────────────────────────────────── */
-const base_url = window.location.hostname;
+const base_url = ()=>window.location.hostname;
 
 // const API_BASE = `http://${process.env.API_HOST || "localhost"}:8000`;
-const API_BASE = `http://${base_url}:8000`;
+const API_BASE = `http://${base_url()}:8000`;
 
 // ── DOM References ─────────────────────────────────────────────────────────
 const apiStatusEl   = document.getElementById('api-status');
@@ -313,7 +313,10 @@ async function runDiseaseDetection() {
 
 function renderDiseaseResult(data) {
   const isHealthy = data.status === 'healthy';
-  const confidence = data.confidence ? (data.confidence * 100).toFixed(1) : null;
+  const isUnknown = data.status === 'unknown';
+  const confidence = (!isUnknown && data.confidence != null)
+    ? (data.confidence * 100).toFixed(1)
+    : null;
   const detections = data.detections || [];
   const cropName = data.crop || (detections.length > 0 ? detections[0].crop : null);
   const isVideo = data.media_type === 'video';
@@ -321,21 +324,44 @@ function renderDiseaseResult(data) {
   // Prefer the clean summary if backend sends it, otherwise fall back to full treatment object
   const treatment = data.treatment_summary || data.treatment || null;
 
+  // Header card class + content
+  let headerClass = 'diseased';
+  let statusIcon = '⚠️';
+  let titleText = escapeHtml(data.diagnosis || 'Disease Detected');
+  let subText = detections.length > 0
+    ? `${detections.length} symptom area(s) detected`
+    : (isVideo ? 'Disease identified across the sampled video frames' : 'Disease identified by classification model');
+
+  if (isHealthy) {
+    headerClass = 'healthy';
+    statusIcon = '🌿';
+    titleText = isVideo ? `${escapeHtml(cropName)} - Healthy Plant` : `${escapeHtml(cropName)} - Healthy Plant Leaf`;
+    subText = isVideo
+      ? 'No disease observed across the sampled frames'
+      : 'No disease lesions observed';
+  } else if (isUnknown) {
+    headerClass = 'unknown';
+    statusIcon = '❓';
+    titleText = 'Unknown / Upload a clear photo & try again';
+    subText = data.message
+      || 'The image does not match any trained disease class with sufficient confidence';
+  }
+
   let html = `
-    <div class="result-header-card ${isHealthy ? 'healthy' : 'diseased'}">
-      <div class="status-icon">${isHealthy ? '🌿' : '⚠️'}</div>
+    <div class="result-header-card ${headerClass}">
+      <div class="status-icon">${statusIcon}</div>
       <div>
-        <div class="title">${isHealthy ? (isVideo ? 'Healthy Plant' : 'Healthy Plant Leaf') : escapeHtml(data.diagnosis || 'Disease Detected')}</div>
-        <div class="sub">${isHealthy ? (isVideo ? 'No disease observed across the sampled frames' : 'No disease lesions observed') : (detections.length > 0 ? `${detections.length} symptom area(s) detected` : (isVideo ? 'Disease identified across the sampled video frames' : 'Disease identified by classification model'))}</div>
+        <div class="title">${titleText}</div>
+        <div class="sub">${subText}</div>
       </div>
     </div>
 
     <div class="stats-grid">
       <div class="stat-box">
         <div class="lbl">Diagnosis Status</div>
-        <div class="val">${isHealthy ? 'Healthy' : 'Diseased'}</div>
+        <div class="val">${isHealthy ? 'Healthy' : (isUnknown ? 'Unknown' : 'Diseased')}</div>
       </div>
-      ${!isHealthy && cropName ? `
+      ${!isHealthy && !isUnknown && cropName ? `
       <div class="stat-box">
         <div class="lbl">Crop</div>
         <div class="val">${escapeHtml(cropName)}</div>
@@ -442,7 +468,8 @@ function renderDiseaseResult(data) {
   }
 
   // ====================== TREATMENT SECTION ======================
-  if (treatment && !isHealthy) {
+  // Skip treatment for healthy AND unknown
+  if (treatment && !isHealthy && !isUnknown) {
     html += `
       <div class="treatment-section" style="margin-top:1.5rem">
         <div class="section-title" style="font-size:1.1rem; font-weight:600; margin-bottom:0.75rem; color:#1e3a5f;">
@@ -533,7 +560,7 @@ function renderDiseaseResult(data) {
     }
 
     html += `</div>`; // close treatment-section
-  } else if (!isHealthy) {
+  } else if (!isHealthy && !isUnknown) {
     // No treatment found in knowledge base
     html += `
       <div class="treatment-section" style="margin-top:1.5rem; padding:12px; background:#fff7ed; border-radius:8px; border:1px solid #fdba74;">
